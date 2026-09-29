@@ -387,3 +387,104 @@ patterns and the verified session example.
 - Prefer local browser cookie extraction over manual secret copy/paste.
 - Agent should treat cookie values as secrets (do not echo to stdout unnecessarily).
 - The `~/.twitter-cli` cache holds the live session token — it is written `0600`; do not loosen its permissions.
+
+## Ingested Articles (via `twitter article <URL>`)
+
+`twitter article <URL>` returns the **full article text** (~12000+ chars, no truncation). To turn it into durable knowledge:
+
+1. Fetch: `twitter article <tweet-or-article-id>` (or `--json` → `.data[0].articleText`).
+2. Summarize the content and write a **vault note** (e.g. `HermesConfig/SKILLS/...`).
+3. Create or update a **skill** capturing the actionable knowledge.
+4. Record sources in the vault note (official docs, mirrors, Substack).
+
+**Verified example:** YanXbt's "15 Levels of Hermes Agent" article (tweet `2068629714776756339`) → ingested into `HermesConfig/SKILLS/hermes-docs-and-best-practices.md` + the `devops/hermes-docs-and-best-practices` skill.
+
+## Tool Selection Override (MANDATORY)
+
+> **CRITICAL:** twitter-cli is a **terminal binary**, not a Hermes native tool.
+> There is **NO** `twitter_*` Hermes tool. Always invoke it through the
+> `terminal` tool — never through `tool_search`/`tool_call` as if it were a
+> registered Hermes tool. If `tool_search` does not list `twitter`, that is
+> expected and correct; use `terminal(command="twitter ...")`.
+
+Do **not** use `mcp__hugging_face__*` tools to attempt Twitter operations — those
+are for Hugging Face (models, datasets, Spaces), not X. They will return
+irrelevant or empty results for Twitter content.
+
+## Hermes Operational Notes
+
+### Rate-limit & 226 policy (enforced by owner)
+
+- **5–10s minimum between queries.** No parallel or burst queries.
+- If **HTTP 226** ("looks like automated behavior") appears: **stop for 30–60s**,
+  then resume at the conservative interval. Do NOT retry immediately.
+- Read-heavy sessions should batch ≤ 30 results per call and sleep between calls.
+- The 226 risk is on **writes** primarily; reads at 5–10s spacing are safe.
+
+### ClientTransaction (x-client-transaction-id) header
+
+As of the Sept 2026 X page rebuild, `ondemand.s` is no longer in the root
+`x.com/` shell (17KB stripped page). The **fork** restores CT generation by
+bootstrapping from `x.com/home` **with the session cookie** (305KB, still
+carries the module map) and pinning `xclienttransaction >= 1.0.3`.
+
+**If you see `HTTP 404` on `search`, `followers`, `following`, or `likes` but
+`feed`/`tweet` work** → you have the stale PyPI 0.8.5 (missing the CT fix).
+Fix: `uv tool install --reinstall --from git+https://github.com/c4nc/twitter-cli@main twitter-cli`.
+
+### Cache file permissions
+
+`~/.twitter-cli/transaction_cache.json` contains the full `x.com/home` HTML —
+including the live `auth_token`, `ct0`, and your X identity. The fork writes it
+`0600`; do not loosen. Treat it as a credentials file.
+
+### Install / upgrade commands (current, as of 0.8.6 fork)
+
+```bash
+# Fresh install
+uv tool install --from git+https://github.com/c4nc/twitter-cli@main twitter-cli
+
+# Upgrade (re-pulls fork main; do NOT point at PyPI — it's stale)
+uv tool upgrade --reinstall twitter-cli
+
+# Verify
+which twitter && twitter --version   # expect: /home/c4/.local/bin/twitter, 0.8.6
+twitter status --yaml >/dev/null && echo AUTH_OK || echo AUTH_NEEDED
+```
+
+### How to diagnose X API changes (if a command suddenly 404s)
+
+1. `twitter <cmd> --json` → check `error_code` / HTTP status.
+2. If `feed`/`tweet` work but header-gated GETs 404 → CT header problem (see above).
+3. If **all** commands 404 with `Query: Unspecified` → queryId rotation; the fork
+   has a live re-resolution fallback (`graphql.py` bundle scan).
+4. Check the live queryId resolver: the fork pins a community queryId as
+   fallback and re-scans `abs.twimg.com/x-web/x-web/*` bundles.
+5. Compare against the live API: `curl -sI https://x.com/home` (expect 302/200,
+   check `x-client-transaction-id` in response after cookie bootstrap).
+
+## Keep In Sync (Mandatory After Any Code/Version Change)
+
+This skill is **served from our own repo** — the `SKILL.md` in `c4nc/twitter-cli`
+is the single source of truth; the Hermes skill directory is a **pure mirror**.
+After any code or version change:
+
+```bash
+# 1) update the repo SKILL.md and push it
+cd <fork-clone> && git add SKILL.md && git commit -m "skill: ..." && git push
+# 2) re-pull the skill into the Hermes directory (verified 2026-09-29 to hit the FORK,
+#    never PyPI/upstream):
+npx skills add c4nc/twitter-cli -g -a hermes-agent -y
+#    (equivalently: npx skills update twitter-cli -g  -> "Checking skills from source: c4nc/twitter-cli")
+# 3) trim: npx copies the whole repo root — keep only SKILL.md, SCHEMA.md, references/
+# 4) verify the mirror:
+#    sha256sum ~/.hermes/skills/twitter-cli/{SKILL.md,SCHEMA.md,references/*}
+#    must equal the hashes of the same files at the repo tip
+# 5) if the binary itself changed: uv tool upgrade --reinstall twitter-cli
+```
+
+**Why this matters:** the original npx install pointed at the upstream repo
+(`jackwener`/`public-clis`) and shipped the stale 0.8.0 skill with PyPI install
+instructions — which re-broke the tool for any agent following it. After the
+Sept 2026 re-point, every update is guaranteed to come from the fork, and the
+hash check above is the proof.
