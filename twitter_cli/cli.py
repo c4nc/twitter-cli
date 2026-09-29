@@ -48,7 +48,7 @@ import yaml
 from . import __version__
 from .auth import get_cookies
 from .cache import resolve_cached_tweet, save_tweet_cache
-from .exceptions import TwitterError
+from .exceptions import NotFoundError, TwitterError
 from .client import TwitterClient
 from .config import load_config
 from .filter import filter_tweets
@@ -961,6 +961,13 @@ def article(ctx, tweet_id, as_json, as_yaml, as_markdown, output_file):
     if as_markdown and (as_json or as_yaml):
         raise click.UsageError("Use only one of --markdown, --json, or --yaml.")
 
+    # Capture the raw input BEFORE normalization (which strips the URL to a
+    # bare numeric ID) so we can detect an /i/article/<id> URL later.
+    raw_input = str(tweet_id).strip()
+    looked_like_article_url = "/i/article/" in raw_input or bool(
+        re.search(r"/article/\d+$", raw_input)
+    )
+
     tweet_id = _normalize_tweet_id(tweet_id)
     config = load_config()
     mode = _structured_mode(as_json=as_json, as_yaml=as_yaml)
@@ -974,6 +981,16 @@ def article(ctx, tweet_id, as_json, as_yaml, as_markdown, output_file):
         elapsed = time.time() - start
         if rich_output:
             console.print("✅ Fetched article in %.1fs\n" % elapsed)
+    except NotFoundError as exc:
+        if looked_like_article_url:
+            raise RuntimeError(
+                "That is an /i/article/<id> URL — the article's internal ID, "
+                "which the API can only resolve through the tweet that posted it. "
+                "Find the tweet that links this article and run:\n"
+                "  twitter article <parent-tweet-id>   (or: twitter tweet <id> --json)\n"
+                "Original error: %s" % exc
+            ) from exc
+        _exit_with_error(exc)
     except (TwitterError, RuntimeError) as exc:
         _exit_with_error(exc)
 
