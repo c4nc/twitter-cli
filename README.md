@@ -29,6 +29,8 @@ The original repository had **no commits after May 2026**, and the several commu
 2. **`xclienttransaction >= 1.0.3`** — the pinned 1.0.1 cannot parse the new numeric-module page layout; 1.0.3 (released 2026-06) can. Bumped and locked.
 3. **GraphQL bundle scan updated** — matches the new `abs.twimg.com/x-web/x-web/*` asset layout (and its `./assets/*.js` chunks) so the live queryId re-resolution fallback works again.
 4. **Five community fixes cherry-picked** (see credits below): author follower/following counts (#57), `possibly_sensitive` + media warning labels (#87), reject incomplete `TweetDetail` responses (#75), retry `Query: Unspecified` via the live queryId resolver (#77), and custom Chromium cookie directories (#76).
+5. **`~/.twitter-cli` cache files locked to `0600`** — the ClientTransaction cache stores the full `x.com/home` HTML (which embeds the live `auth_token`/`ct0`); it was written world-readable (`0644`). Now written and read owner-only, with regression tests.
+6. **Article handling** — `twitter article` given an `/i/article/<id>` URL now emits a precise error pointing at the parent-tweet command (X articles are *not* paywalled; the full article is freely retrievable through the tweet that posted it).
 
 This fork is ahead of the current PyPI release (0.8.5); it is at **0.8.6**.
 
