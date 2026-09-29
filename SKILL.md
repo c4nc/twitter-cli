@@ -1,8 +1,8 @@
 ---
 name: twitter-cli
 description: Use twitter-cli for ALL Twitter/X operations — reading tweets, posting, replying, quoting, liking, retweeting, following, searching, user lookups. Invoke whenever user requests any Twitter interaction.
-author: jackwener
-version: "0.8.0"
+author: c4nc (fork of jackwener/twitter-cli)
+version: "0.8.6"
 tags:
   - twitter
   - x
@@ -15,18 +15,30 @@ tags:
 
 **Binary:** `twitter`
 **Credentials:** browser cookies (auto-extracted) or env vars
+**Install source:** the maintained fork `c4nc/twitter-cli` (upstream `public-clis/twitter-cli` is the original; the PyPI package is stale)
 
 ## Setup
 
 ```bash
-# Install (requires Python 3.8+)
-uv tool install twitter-cli
-# Or: pipx install twitter-cli
+# Install from the maintained FORK (carries the Sept-2026 ClientTransaction fix
+# that upstream/PyPI 0.8.5 lacks). NEVER the bare `uv tool install twitter-cli`
+# (that pulls the stale PyPI 0.8.5 which 404s on search/followers/likes).
+uv tool install --from git+https://github.com/c4nc/twitter-cli@main twitter-cli
 
-# Upgrade to latest (recommended to avoid API errors)
-uv tool upgrade twitter-cli
-# Or: pipx upgrade twitter-cli
+# Upgrade to latest fork (re-runs the git install; do NOT point it at PyPI)
+uv tool upgrade --reinstall twitter-cli
+# or explicitly: uv tool install --reinstall --from git+https://github.com/c4nc/twitter-cli@main twitter-cli
+
+# Verify you have the fork (prints 0.8.x with the CT fix), and that it's installed
+which twitter && twitter --version
 ```
+
+> **Why the fork?** X's Sept 2026 page rebuild stripped `ondemand.s` from the
+> root shell, so the ClientTransaction `x-client-transaction-id` header was never
+> generated and every header-gated GET (search, followers, following, likes)
+> 404'd. The fork restores it by bootstrapping CT from `https://x.com/home`
+> (fetched *with* the session cookie) and pins `xclienttransaction >= 1.0.3`.
+> See the repo README "About this fork" for full detail.
 
 ## Authentication
 
@@ -184,22 +196,22 @@ twitter following elonmusk --max 50    # Following
 
 ```bash
 twitter post "Hello from twitter-cli!"              # Post tweet
-twitter post "Hello!" --image photo.jpg              # Post with image
-twitter post "Gallery" -i a.png -i b.jpg             # Up to 4 images
-twitter reply 1234567890 "Great tweet!"              # Reply (standalone)
-twitter reply 1234567890 "Nice!" -i pic.png          # Reply with image
-twitter post "reply text" --reply-to 1234567890      # Reply (via post)
-twitter quote 1234567890 "Interesting take"          # Quote-tweet
-twitter quote 1234567890 "Look" -i chart.png         # Quote with image
-twitter delete 1234567890                            # Delete tweet
-twitter like 1234567890                              # Like
-twitter unlike 1234567890                            # Unlike
-twitter retweet 1234567890                           # Retweet
-twitter unretweet 1234567890                         # Unretweet
-twitter bookmark 1234567890                          # Bookmark
-twitter unbookmark 1234567890                        # Unbookmark
-twitter follow elonmusk                              # Follow user
-twitter unfollow elonmusk                            # Unfollow user
+twitter post "Hello!" --image photo.jpg             # Post with image
+twitter post "Gallery" -i a.png -i b.jpg            # Up to 4 images
+twitter reply 1234567890 "Great tweet!"             # Reply (standalone)
+twitter reply 1234567890 "Nice!" -i pic.png         # Reply with image
+twitter post "reply text" --reply-to 1234567890     # Reply (via post)
+twitter quote 1234567890 "Interesting take"         # Quote-tweet
+twitter quote 1234567890 "Look" -i chart.png        # Quote with image
+twitter delete 1234567890                           # Delete tweet
+twitter like 1234567890                             # Like
+twitter unlike 1234567890                           # Unlike
+twitter retweet 1234567890                          # Retweet
+twitter unretweet 1234567890                        # Unretweet
+twitter bookmark 1234567890                         # Bookmark
+twitter unbookmark 1234567890                       # Unbookmark
+twitter follow elonmusk                             # Follow user
+twitter unfollow elonmusk                           # Unfollow user
 ```
 
 **Image upload notes:**
@@ -207,6 +219,26 @@ twitter unfollow elonmusk                            # Unfollow user
 - Max file size: 5 MB per image
 - Max 4 images per tweet
 - Use `--image` / `-i` (repeatable)
+
+### Article (long-form) — read via the POSTING TWEET, not the article URL
+
+X "articles" (`x.com/i/article/<id>`) are **not** paywalled, but the API has no
+article-by-id operation — `TweetResultByRestId` only resolves a *tweet* REST id,
+so `twitter article <article-id-or-/i/article/-url>` returns a precise
+`not_found` (the fork explains exactly what to do). The full article content is
+freely retrievable through **the tweet that posted it**: that tweet carries
+`articleTitle` + `articleText` (every section, code block, image, link).
+
+```bash
+# Given an /i/article/<id> URL: find the tweet that links it (author's timeline,
+# a reply, or: twitter search "<distinctive words from the title>"), then:
+twitter article <parent-tweet-id>            # -> full article text
+# or: twitter tweet <parent-tweet-id> --json  # -> .data[0].articleText
+```
+
+**Do NOT** try to "crack" an article paywall — none exists. If a content gate
+ever appears (`isSubscriberOnly: true`), that is the only real restriction and it
+cannot be bypassed by this tool.
 
 ## Agent Workflows
 
@@ -224,7 +256,7 @@ twitter post "My tweet text" 2>/dev/null
 twitter post "Check this out!" --image /path/to/photo.jpg
 
 # Multiple images
-twitter post "Photo gallery" -i img1.png -i img2.jpg -i img3.webp
+twitter post "Photo gallery" -i img1.png -i img2.png -i img3.webp
 ```
 
 ### Reply to someone's latest tweet
@@ -269,14 +301,14 @@ twitter follow targethandle
 ### Find most popular tweets from a user
 
 ```bash
-twitter user-posts elonmusk --max 20 --json | jq '.data | sort_by(.metrics.likes) | reverse | .[:3] | .[] | {id, text: .text[:80], likes: .metrics.likes}'
+twitter user-posts targethandle --max 20 --json | jq '.data | sort_by(.metrics.likes) | reverse | .[:3] | .[] | {id, text: .text[:80], likes: .metrics.likes}'
 ```
 
 ### Check follower relationship
 
 ```bash
 MY_NAME=$(twitter whoami --json | jq -r '.data.user.username')
-twitter followers "$MY_NAME" --max 200 --json | jq -r '.data[].username' | grep -q "targetuser" && echo "Yes" || echo "No"
+twitter followers "$MY_NAME" --max 200 --json | jq -r '.data[].username' | grep -q "targethandle" && echo "Yes" || echo "No"
 ```
 
 ### Daily reading workflow
@@ -317,6 +349,13 @@ twitter feed --filter
 twitter bookmarks --filter
 ```
 
+## Invocation Pattern (Hermes)
+
+twitter-cli is a **terminal** binary, not a Hermes native tool. Invoke it through
+the `terminal` tool — never assume a `twitter_*` Hermes tool exists. See
+[references/invocation-pattern.md](references/invocation-pattern.md) for exact
+patterns and the verified session example.
+
 ## Error Reference
 
 | Error | Cause | Fix |
@@ -324,7 +363,8 @@ twitter bookmarks --filter
 | `No Twitter cookies found` | Not authenticated | Login to x.com in browser, or set env vars |
 | HTTP 226 | Automated detection | Use browser cookie extraction (not env vars) |
 | HTTP 401/403 | Cookie expired | Re-login to x.com and retry |
-| HTTP 404 | QueryId rotation | Retry (auto-fallback built in) |
+| HTTP 404 (search/followers/likes) | Stale PyPI 0.8.5 (missing CT fix) | Reinstall from the fork: `uv tool install --reinstall --from git+https://github.com/c4nc/twitter-cli@main` |
+| HTTP 404 (other) | QueryId rotation | Retry (auto-fallback built in) |
 | HTTP 429 | Rate limited | Wait 15+ minutes, then retry |
 | Error 187 | Duplicate tweet | Change text content |
 | Error 186 | Tweet too long | Keep under 280 chars |
@@ -341,7 +381,9 @@ twitter bookmarks --filter
 ## Safety Notes
 
 - Write operations have built-in random delays (1.5–4s) to avoid rate limits.
+- Read operations: space queries 5–10s apart; back off to 30–60s if a 226 occurs.
 - TLS fingerprint and User-Agent are automatically matched to the Chrome version used.
 - Do not ask users to share raw cookie values in chat logs.
 - Prefer local browser cookie extraction over manual secret copy/paste.
 - Agent should treat cookie values as secrets (do not echo to stdout unnecessarily).
+- The `~/.twitter-cli` cache holds the live session token — it is written `0600`; do not loosen its permissions.
