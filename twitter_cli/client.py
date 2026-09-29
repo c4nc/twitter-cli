@@ -1069,6 +1069,12 @@ class TwitterClient:
             cache_path = self._ct_cache_path()
             if not os.path.exists(cache_path):
                 return False
+            # Defense in depth: if an older build left the file world-readable,
+            # tighten it before we read (and before it could be read by others).
+            try:
+                os.chmod(cache_path, 0o600)
+            except OSError:
+                pass
             with open(cache_path, "r", encoding="utf-8") as f:
                 cache = json.load(f)
             # Check TTL (1 hour)
@@ -1104,6 +1110,10 @@ class TwitterClient:
             }
             with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump(cache, f)
+            # The cache embeds the session's live auth_token/csrf in the
+            # stored home_html. Lock it to the owner (0600) so a local user on
+            # a shared host cannot read it off disk.
+            os.chmod(cache_path, 0o600)
             logger.debug("Saved CT cache to %s", cache_path)
         except Exception as exc:
             logger.debug("Failed to save CT cache: %s", exc)

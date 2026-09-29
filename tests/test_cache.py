@@ -99,3 +99,34 @@ class TestCacheEdgeCases:
         tweet_id, size = resolve_cached_tweet(1)
         assert tweet_id is None
         assert size == 0
+
+
+class TestCachePermissions:
+    """The tweet cache holds recent text the user read — it must stay
+    owner-only (0600), not world-readable."""
+
+    def test_save_writes_owner_only(self, tmp_path, monkeypatch) -> None:
+        import stat
+
+        cache_file = tmp_path / "last_results.json"
+        monkeypatch.setattr("twitter_cli.cache._CACHE_FILE", cache_file)
+        monkeypatch.setattr("twitter_cli.cache._CACHE_DIR", tmp_path)
+
+        save_tweet_cache([_make_tweet("100")])
+        assert cache_file.exists()
+        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+
+    def test_load_tightens_preexisting_world_readable(self, tmp_path, monkeypatch) -> None:
+        import json as _json
+        import stat
+
+        cache_file = tmp_path / "last_results.json"
+        cache_file.write_text(
+            _json.dumps({"created_at": time.time(), "tweets": []}),
+            encoding="utf-8",
+        )
+        cache_file.chmod(0o644)  # simulate a file an older build left readable
+        monkeypatch.setattr("twitter_cli.cache._CACHE_FILE", cache_file)
+
+        resolve_cached_tweet(1)
+        assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600

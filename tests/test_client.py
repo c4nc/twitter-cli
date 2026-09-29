@@ -7,6 +7,8 @@ and feature flag update logic — all without requiring network access.
 from __future__ import annotations
 
 import copy
+import os
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1784,3 +1786,53 @@ class TestClientTransactionBootstrap:
             "https://abs.twimg.com/responsive-web/client-web/"
             "ondemand.s.38289b77fa31a72ca.js"
         )
+
+
+class TestCachePermissions:
+    """The CT cache embeds the session's live auth_token/csrf in the stored
+    home_html — it must never be world-readable (0600), both on write and by
+    tightening any file an older build left readable."""
+
+    def _client_with_tmp_cache(self, tmp_path):
+        from twitter_cli.client import TwitterClient
+
+        client = TwitterClient.__new__(TwitterClient)
+        cache_path = os.path.join(str(tmp_path), "transaction_cache.json")
+        TwitterClient._ct_cache_path = staticmethod(lambda: cache_path)
+        return client, cache_path
+
+    def test_save_writes_owner_only(self, tmp_path) -> None:
+        import stat
+
+        client, cache_path = self._client_with_tmp_cache(tmp_path)
+        client._save_ct_cache("<html>home</html>", "ondemand js")
+        assert os.path.exists(cache_path)
+        assert stat.S_IMODE(os.stat(cache_path).st_mode) == 0o600
+
+    def test_load_tightens_preexisting_world_readable(self, tmp_path) -> None:
+        import json
+        import stat
+
+        from unittest.mock import patch
+
+        client, cache_path = self._client_with_tmp_cache(tmp_path)
+        # Simulate a file a pre-fix build left world-readable, using the
+        # same known-good page fixtures the bootstrap tests use.
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "home_html": _CT_HOME_HTML,
+                    "ondemand_text": _CT_ONDEMAND_JS,
+                    "created_at": time.time(),
+                },
+                f,
+            )
+        os.chmod(cache_path, 0o644)
+
+        # Reading must tighten the file to owner-only and succeed.
+        with (
+            patch("twitter_cli.client.ClientTransaction"),
+            patch("twitter_cli.client._update_features_from_html"),
+        ):
+            assert client._load_ct_cache() is True
+        assert stat.S_IMODE(os.stat(cache_path).st_mode) == 0o600

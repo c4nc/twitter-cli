@@ -28,6 +28,8 @@ def save_tweet_cache(tweets: List[Tweet]) -> None:
         ]
         payload = {"created_at": time.time(), "tweets": entries}
         _CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Cache holds recent tweet text the user read — keep it owner-only.
+        _CACHE_FILE.chmod(0o600)
     except OSError as exc:
         logger.debug("Failed to write tweet cache: %s", exc)
 
@@ -37,6 +39,10 @@ def _load_cache() -> Optional[List[dict]]:
     try:
         if not _CACHE_FILE.exists():
             return None
+        try:
+            _CACHE_FILE.chmod(0o600)
+        except OSError:
+            pass
         payload = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             return None
