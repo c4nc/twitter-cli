@@ -983,13 +983,17 @@ def article(ctx, tweet_id, as_json, as_yaml, as_markdown, output_file):
             console.print("✅ Fetched article in %.1fs\n" % elapsed)
     except NotFoundError as exc:
         if looked_like_article_url:
-            raise RuntimeError(
-                "That is an /i/article/<id> URL — the article's internal ID, "
-                "which the API can only resolve through the tweet that posted it. "
-                "Find the tweet that links this article and run:\n"
-                "  twitter article <parent-tweet-id>   (or: twitter tweet <id> --json)\n"
-                "Original error: %s" % exc
-            ) from exc
+            # Route through the normal error path so it emits clean
+            # structured output (no traceback).
+            _exit_with_error(
+                NotFoundError(
+                    "That is an /i/article/<id> URL — the article's internal "
+                    "ID, which the API can only resolve through the tweet that "
+                    "posted it. Find the tweet that links this article and run: "
+                    "twitter article <parent-tweet-id> (or: twitter tweet "
+                    "<parent-tweet-id> --json). Original: %s" % exc
+                )
+            )
         _exit_with_error(exc)
     except (TwitterError, RuntimeError) as exc:
         _exit_with_error(exc)
