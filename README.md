@@ -1,10 +1,54 @@
 # twitter-cli
 
-[![CI](https://github.com/jackwener/twitter-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jackwener/twitter-cli/actions/workflows/ci.yml)
-[![PyPI version](https://badge.fury.io/py/twitter-cli.svg)](https://pypi.org/project/twitter-cli/)
+> **Maintained fork** of [public-clis/twitter-cli](https://github.com/public-clis/twitter-cli) (originally [jackwener/twitter-cli](https://github.com/jackwener/twitter-cli)) by [c4nc](https://github.com/c4nc/twitter-cli). Read [About this fork](#about-this-fork).
+
+[![Fork of public-clis/twitter-cli](https://img.shields.io/badge/fork%20of-public--clis%2Ftwitter--cli-blue)](https://github.com/public-clis/twitter-cli)
+[![CI](https://github.com/c4nc/twitter-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/c4nc/twitter-cli/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-0.8.6-brightgreen)](https://github.com/c4nc/twitter-cli)
+[![PyPI version (upstream)](https://badge.fury.io/py/twitter-cli.svg)](https://pypi.org/project/twitter-cli/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://pypi.org/project/twitter-cli/)
 
 A terminal-first CLI for Twitter/X: read timelines, bookmarks, and user profiles without API keys.
+
+## About this fork
+
+This is a **maintenance fork** of the original `twitter-cli`. It is a **minimal-diff fork, not a rewrite** — the whole feature set (auth, filters, output formats, articles, lists, write operations) is the original project's, unchanged. This fork exists to keep the tool *working* after X's September 2026 web rebuild broke a core anti-detection header, and to keep shipping fixes while the original repository has been dormant.
+
+### Why this fork exists
+
+X restructured its web frontend in September 2026. The logged-out root page (`https://x.com`) no longer embeds the `ondemand.s` bundle that the `xclienttransaction` library scrapes to generate the `x-client-transaction-id` header. Without that header, every header-gated GraphQL read returns HTTP 404:
+
+- `search`
+- `followers`, `following`, `likes`
+
+The original repository had **no commits after May 2026**, and the several community pull requests that fixed this (#74, #79, #84, #86, #89, #90, #91) sat unmerged against an unresponsive maintainer. This fork ships the verified fix so the tool works out of the box.
+
+### What this fork contains (beyond upstream `main`)
+
+1. **ClientTransaction bootstrap fixed** — the bootstrap now fetches `https://x.com/home` *with the session cookie* (the page that still carries the `ondemand.s` bundle), so `x-client-transaction-id` is generated again. This restores `search`, `followers`, `following`, and `likes`. Supersedes the unmerged upstream PRs listed above.
+2. **`xclienttransaction >= 1.0.3`** — the pinned 1.0.1 cannot parse the new numeric-module page layout; 1.0.3 (released 2026-06) can. Bumped and locked.
+3. **GraphQL bundle scan updated** — matches the new `abs.twimg.com/x-web/x-web/*` asset layout (and its `./assets/*.js` chunks) so the live queryId re-resolution fallback works again.
+4. **Five community fixes cherry-picked** (see credits below): author follower/following counts (#57), `possibly_sensitive` + media warning labels (#87), reject incomplete `TweetDetail` responses (#75), retry `Query: Unspecified` via the live queryId resolver (#77), and custom Chromium cookie directories (#76).
+
+This fork is ahead of the current PyPI release (0.8.5); it is at **0.8.6**.
+
+### Credits
+
+This fork builds on the work of several people and we credit them explicitly:
+
+- **Original project:** [twitter-cli](https://github.com/public-clis/twitter-cli) by **jackwener** ([jakevingoo@gmail.com](mailto:jakevingoo@gmail.com)), [Apache-2.0](LICENSE). Everything in this fork that is not listed as a change above is the original author's work, unmodified.
+- **`xclienttransaction`** ([iSarabjitDhiman/XClientTransaction](https://github.com/iSarabjitDhiman/XClientTransaction)) by **Sarabjit Dhiman**, MIT-licensed — the `x-client-transaction-id` generator this tool depends on.
+- **Cherry-picked community fixes:**
+  - **Lucius Chen** ([@LuciusChen](https://github.com/LuciusChen)) — #75 (reject incomplete TweetDetail), #77 (retry `Unspecified` with live IDs), #76 (custom Chromium cookie directories)
+  - **edwin bernadus** ([@edwinbernadus](https://github.com/edwinbernadus)) — #57 (author follower/following counts)
+  - **Li Chenxi** ([@ayanamists](https://github.com/ayanamists)) — #87 (`possibly_sensitive` + media warning labels)
+- **This fork (c4nc):** the ClientTransaction bootstrap fix ([#93](https://github.com/public-clis/twitter-cli/pull/93)), the `xclienttransaction >= 1.0.3` bump, and the x-web bundle-scan update, plus the test coverage for all of the above.
+
+The fix in this fork is also contributed upstream as [public-clis/twitter-cli#93](https://github.com/public-clis/twitter-cli/pull/93).
+
+### Upstream & contributing
+
+We are **not** forking to fork. The priority is a working tool and clean upstream. If the original repository resumes active maintenance — in particular, if it merges the ClientTransaction fix and ships a release — this fork will be archived (or merged back), and we'll direct people to the original. Until then, **this fork is the actively-maintained version**, and contributions are welcome: open an issue or PR here, or against the original, whichever you prefer. If X changes its page layout again and both repositories break, this is where the next fix lands.
 
 ## More Tools
 
@@ -54,27 +98,36 @@ A terminal-first CLI for Twitter/X: read timelines, bookmarks, and user profiles
 
 ### Installation
 
+**The working version (with the X Sept-2026 fix) is this fork** — install from it:
+
 ```bash
 # Recommended: uv tool (fast, isolated)
-uv tool install twitter-cli
+uv tool install --from git+https://github.com/c4nc/twitter-cli twitter-cli
 
 # Alternative: pipx
+pipx install git+https://github.com/c4nc/twitter-cli
+```
+
+**The original** (upstream `public-clis/twitter-cli`, published on PyPI) is what most people have installed. It is currently at 0.8.5 and *missing* the ClientTransaction fix, so `search` / `followers` / `following` / `likes` will 404 against X's current pages:
+
+```bash
+uv tool install twitter-cli
 pipx install twitter-cli
 ```
 
-Upgrade to the latest version:
+Upgrade to the latest (for this fork, re-installs the newest `main`):
 
 ```bash
 uv tool upgrade twitter-cli
 # Or: pipx upgrade twitter-cli
 ```
 
-> **Tip:** Upgrade regularly to avoid unexpected errors from outdated API handling.
+> **Tip:** Upgrade regularly to avoid unexpected errors from outdated API handling. If the original repository resumes maintenance and ships the fix, switch back to `uv tool install twitter-cli` (PyPI) and retire this fork — see [About this fork](#about-this-fork).
 
 Install from source:
 
 ```bash
-git clone git@github.com:jackwener/twitter-cli.git
+git clone https://github.com/c4nc/twitter-cli
 cd twitter-cli
 uv sync
 ```
@@ -362,8 +415,11 @@ twitter-cli ships with a [`SKILL.md`](./SKILL.md) so AI agents can execute commo
 #### [Skills CLI](https://github.com/vercel-labs/skills) (Recommended)
 
 ```bash
-npx skills add jackwener/twitter-cli
+# this fork (has the Sept-2026 fix)
+npx skills add c4nc/twitter-cli
 ```
+
+> The original is also available as `npx skills add public-clis/twitter-cli` (PyPI), but it lacks the ClientTransaction fix until upstream ships it.
 
 | Flag | Description |
 | --- | --- |
@@ -375,7 +431,7 @@ npx skills add jackwener/twitter-cli
 
 ```bash
 mkdir -p .agents/skills
-git clone git@github.com:jackwener/twitter-cli.git .agents/skills/twitter-cli
+git clone https://github.com/c4nc/twitter-cli .agents/skills/twitter-cli
 ```
 
 #### ~~OpenClaw / ClawHub~~ (Deprecated)
@@ -419,19 +475,27 @@ git clone git@github.com:jackwener/twitter-cli.git .agents/skills/twitter-cli
 
 ### 安装
 
+**带 X 2026 年 9 月修复的版本是这个 fork** — 请从它安装：
+
 ```bash
 # 推荐：uv tool
+uv tool install --from git+https://github.com/c4nc/twitter-cli twitter-cli
+```
+
+**原始仓库**（上游 `public-clis/twitter-cli`，发布于 PyPI）是大多数人已安装的版本，目前为 0.8.5 且*缺少* ClientTransaction 修复，因此 `search` / `followers` / `following` / `likes` 在当前 X 页面上会 404：
+
+```bash
 uv tool install twitter-cli
 ```
 
-升级到最新版本：
+升级到最新版本（对本 fork 而言，会重新安装最新的 `main`）：
 
 ```bash
 uv tool upgrade twitter-cli
 # 或：pipx upgrade twitter-cli
 ```
 
-> **提示：** 建议定期升级，避免因版本过旧导致的 API 调用异常。
+> **提示：** 建议定期升级，避免因版本过旧导致的 API 调用异常。如果原始仓库恢复维护并发布了修复，请切回 `uv tool install twitter-cli`（PyPI）并弃用本 fork — 见上文「关于本 fork」。
 
 ### 使用指南
 
@@ -618,8 +682,11 @@ twitter-cli 提供了 [`SKILL.md`](./SKILL.md)，可让 AI Agent 更稳定地调
 #### [Skills CLI](https://github.com/vercel-labs/skills)（推荐）
 
 ```bash
-npx skills add jackwener/twitter-cli
+# 本 fork（带 2026 年 9 月修复）
+npx skills add c4nc/twitter-cli
 ```
+
+> 原始仓库也可用 `npx skills add public-clis/twitter-cli`（PyPI），但在上游发布修复前缺少 ClientTransaction 修复。
 
 | 参数 | 说明 |
 | --- | --- |
@@ -631,7 +698,7 @@ npx skills add jackwener/twitter-cli
 
 ```bash
 mkdir -p .agents/skills
-git clone git@github.com:jackwener/twitter-cli.git .agents/skills/twitter-cli
+git clone https://github.com/c4nc/twitter-cli .agents/skills/twitter-cli
 ```
 
 #### ~~OpenClaw / ClawHub~~（已过时）
